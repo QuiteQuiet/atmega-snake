@@ -128,9 +128,9 @@ main:
 	ldi ZL, low(dMatrix)
 	ldi ZH, high(dMatrix)
 
-	lds rTemp, 0x00
+	ldi rTemp, 0x00
 	st	Z+, rTemp
-	lds rTemp, 0x00
+	ldi rTemp, 0x00
 	st	Z+, rTemp
 	ldi rTemp, 0x00
 	st  Z+, rTemp
