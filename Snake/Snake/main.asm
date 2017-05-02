@@ -6,6 +6,12 @@
 ;
 .DEF rITemp1	= r1
 .DEF rITemp2	= r2
+.DEF rITemp3	= r3
+.DEF rITemp4	= r4
+.DEF rTimerCount = r5
+.DEF rLength	= r6
+.DEF rDirection	= r7
+.DEF rOldSnakePos = r8
 .DEF rTemp		= r16
 .DEF rArraySize = r17
 .DEF rRow		= r18
@@ -13,15 +19,25 @@
 .DEF rOutputC	= r20
 .DEF rOutputD	= r21
 .DEF rRowSelect	= r22
+.DEF rSnakeX	= r23
+.DEF rSnakeY	= r24
+
+; constants
+.EQU MAX_LENGTH    = 25
 
 .DSEG
 ; Datasegment för lysdiodarrayen
 dMatrix: .BYTE 8
+; Snake array
+dSnake: .BYTE MAX_LENGTH + 1
 
 .CSEG
 
 .ORG 0x0000
 	jmp init
+
+.ORG 0x0020
+	jmp t0_overflow
 
 .ORG 0x002A
 	jmp adc_complete
@@ -37,6 +53,12 @@ init:
 
 	; Global interrupt enable
 	sei
+
+	; Timer0 config
+	ldi rTemp, 0b00000100 ; (Timer0 enabled, /1024 clock cycle)
+	out TCCR0B, rTemp
+	ldi rTemp, (1<<TOIE0) ; (Enable Timer0 interrupt)
+	sts TIMSK0, rTemp
 
 	; ADC config
 	ldi rTemp, 0b01100100 ; (AVCC with external capacitor at AREF pin, Left adjusted result)
@@ -54,21 +76,118 @@ init:
 
 	jmp main
 
+; ADC interrupt subroutine
 adc_complete:
 	ldi ZL, low(dMatrix)
 	ldi ZH, high(dMatrix)
 	lds rITemp1, ADCH
 	lds rITemp2, ADMUX
-	sbrc rITemp2, MUX0
-	st Z, rITemp1
+
+	ldi r25, 0x20
+	cp rITemp1, r25
+	brsh over_0x20
+	ldi r25, 0
+	cbr r25, 1 ; RÄKNAR FRÅN ETT!!!?!?!?!?!?!?
+	mov r10, r25
+	rjmp get_axis
+
+	over_0x20:
+	ldi r25, 0xE0
+	cp rITemp1, r25
+	brlo move_end
+	ldi r25, 0
+	sbr r25, 1
+	mov r10, r25
+
+	get_axis:
+	ldi r25, 0
 	sbrs rITemp2, MUX0
-	std Z+1, rITemp1
+	sbr r25, 2
+	or r10, r25
+	mov rDirection, r10
+
+	move_end:
 	ldi r25, 0x01
 	eor rITemp2, r25
 	sts ADMUX, rITemp2
 	lds r25, ADCSRA
 	ori r25, (1<<ADSC)
 	sts ADCSRA, r25 ; start next ADC
+	reti
+
+; Timer0 interrupt subroutine
+t0_overflow:
+	inc rTimerCount
+	breq t0_do_stuff
+	reti
+	t0_do_stuff:
+	ldi XL, low(dMatrix)
+	ldi XH, high(dMatrix)
+	ldi r23, 8
+	t0_clear_loop:
+		ld r24, X
+		clr r24
+		st X+, r24
+		dec r23
+		brne t0_clear_loop
+	ldi XL, low(dMatrix)
+	ldi XH, high(dMatrix)
+	ldi YL, low(dSnake)
+	ldi YH, high(dSnake)
+	mov rITemp1, rLength
+	t0_snake_loop:
+		ld rITemp2, Y
+		; move snake head position
+		mov rOldSnakePos, rITemp2
+		sbrs rDirection, 1
+		swap rITemp2
+	
+		ldi r25, 0x7
+		and rITemp2, r25
+		sbrc rDirection, 0
+		dec rITemp2
+		sbrs rDirection, 0
+		inc rITemp2
+		ldi r25, 0x7
+		and rITemp2, r25
+		ld r25, Y
+		sbrs rDirection, 1
+		rjmp x_pos_change
+		andi r25, 0xF0
+		or rITemp2, r25
+		rjmp new_pos_store
+
+		x_pos_change:
+		andi r25, 0x0F
+		swap rITemp2
+		or rITemp2, r25
+
+		new_pos_store:
+		st Y+, rITemp2
+
+		mov rSnakeX, rITemp2
+		swap rSnakeX
+		andi rSnakeX, 0x07
+		mov rSnakeY, rITemp2
+		andi rSnakeY, 0x07
+		movw Z, X
+		add ZL, rSnakeY
+		lds rITemp3, SREG
+		sbrc rITemp3, 3 ; check if overflow flag is set
+		inc ZH
+		ld rITemp4, Z
+		ldi r25, 0x80
+		cpi rSnakeX, 1
+		brlo update_position
+		t0_find_xpos:
+			lsr r25
+			dec rSnakeX
+			brne t0_find_xpos
+		update_position:
+		or rITemp4, r25
+		st Z, rITemp4
+		dec rITemp1
+		brne t0_snake_loop
 	reti
 
 print:
@@ -125,11 +244,21 @@ print:
 
 
 main:
+	ldi XL, low(dSnake)
+	ldi XH, high(dSnake)
+	; start the snake in the center
+	ldi rTemp, 0x36
+	st X, rTemp
+	ldi rTemp, 0x1
+	mov rLength, rTemp
+
 	ldi ZL, low(dMatrix)
 	ldi ZH, high(dMatrix)
 
 	ldi rTemp, 0x00
 	st	Z+, rTemp
+	mov rTimerCount, rTemp
+	mov rDirection, rTemp
 	ldi rTemp, 0x00
 	st	Z+, rTemp
 	ldi rTemp, 0x00
