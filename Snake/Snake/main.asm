@@ -14,7 +14,8 @@
 .DEF rOldSnakePos = r8
 .DEF rIndex		= r9
 .DEF rPart		= r11
-
+.DEF rHeadPos	= r12
+.DEF rApple		= r13
 .DEF rTick		= r14
 .DEF rTemp		= r16
 .DEF rArraySize = r17
@@ -64,7 +65,7 @@ init:
 	sei
 
 	; Timer0 config
-	ldi rTemp, 0b00000100 ; (Timer0 enabled, /1024 clock cycle)
+	ldi rTemp, 0b00000011 ; (Timer0 enabled, /256 clock cycle)
 	out TCCR0B, rTemp
 	ldi rTemp, (1<<TOIE0) ; (Enable Timer0 interrupt)
 	sts TIMSK0, rTemp
@@ -191,10 +192,16 @@ main:
 	ldi XL, low(dSnake)
 	ldi XH, high(dSnake)
 	; start the snake in the center
-	ldi rTemp, 0x35
-	st X, rTemp
-	ldi rTemp, 0x1
+	ldi rTemp, 0x34
+	st X+, rTemp
+	ldi rTemp, 0x24
+	st X+, rTemp
+	ldi rTemp, 0x14
+	st X+, rTemp
+	ldi rTemp, 0x3
 	mov rLength, rTemp
+	ldi rTemp, 0x21
+	mov rApple, rTemp
 
 	ldi ZL, low(dMatrix)
 	ldi ZH, high(dMatrix)
@@ -244,7 +251,10 @@ main:
 		mov rIndex, rLength
 		move_snake_loop:
 			ld rPart, Y
-			; TODO: jump if not head
+
+			; jump if not head
+			cpse rIndex, rLength
+			jmp move_snake_part
 
 			; move snake head position
 			mov rOldSnakePos, rPart
@@ -264,22 +274,34 @@ main:
 			; load coordinates for the snake again (if x position changed, we need the old y again)
 			ld rTemp, Y
 			sbrs rDirection, 1
-			rjmp x_pos_change
+			jmp x_pos_change
 
 			; y-position changed
 			andi rTemp, 0xF0
 			or rPart, rTemp
-			rjmp new_pos_store
+			mov rHeadPos, rPart ; store new head position for collision
+			jmp new_pos_store
 
 			; x-position changed
 			x_pos_change:
 			andi rTemp, 0x0F
 			swap rPart
 			or rPart, rTemp
-			rjmp new_pos_store
+			mov rHeadPos, rPart ; store new head position for collision
+			jmp new_pos_store
 
 			; move every other part that isn't the head
-			; TODO
+			move_snake_part:
+			mov rTemp, rPart
+			mov rPart, rOldSnakePos
+			mov rOldSnakePos, rTemp
+
+			; collision detection
+			cpse rHeadPos, rPart
+			jmp new_pos_store
+
+			; snake head collided with a body part
+			jmp init
 
 			new_pos_store:
 			st Y+, rPart
