@@ -17,6 +17,7 @@
 .DEF rHeadPos	= r12
 .DEF rApple		= r13
 .DEF rTick		= r14
+.DEF rRandom	= r15
 .DEF rTemp		= r16
 .DEF rArraySize = r17
 .DEF rRow		= r18
@@ -88,6 +89,15 @@ init:
 
 ; ADC interrupt subroutine
 adc_complete:
+	; do some random generation 
+	lds rITemp1, ADCL
+	swap rITemp1
+	lsr rITemp1
+	mul rITemp1, rITemp1
+	mov rITemp1, r0
+	add rRandom, rITemp1
+
+	; deal with movement
 	lds rITemp1, ADCH
 	lds rITemp2, ADMUX
 
@@ -229,8 +239,7 @@ main:
 	ori rTemp, (1<<ADSC)
 	sts ADCSRA, rTemp ; start first ADC
 
-	loop:
-		
+	loop:	
 		call print
 		sbrs rTick, 1
 		jmp loop
@@ -298,7 +307,13 @@ main:
 			cpse rApple, rHeadPos
 			jmp new_pos_store
 			inc rLength
-			; TODO: spawn new apple
+			; generate new apple position
+			mov rTemp, rTimerCount
+			add rTemp, rRandom
+			andi rTemp, 0x77
+			mov rApple, rTemp
+
+			mov rApple, rTemp
 			jmp new_pos_store
 
 			; move every other part that isn't the head
