@@ -65,7 +65,7 @@ init:
 	sei
 
 	; Timer0 config
-	ldi rTemp, 0b00000011 ; (Timer0 enabled, /256 clock cycle)
+	ldi rTemp, 0b00000100 ; (Timer0 enabled, /256 clock cycle)
 	out TCCR0B, rTemp
 	ldi rTemp, (1<<TOIE0) ; (Enable Timer0 interrupt)
 	sts TIMSK0, rTemp
@@ -194,9 +194,9 @@ main:
 	; start the snake in the center
 	ldi rTemp, 0x34
 	st X+, rTemp
-	ldi rTemp, 0x24
+	ldi rTemp, 0x34
 	st X+, rTemp
-	ldi rTemp, 0x14
+	ldi rTemp, 0x34
 	st X+, rTemp
 	ldi rTemp, 0x3
 	mov rLength, rTemp
@@ -280,7 +280,7 @@ main:
 			andi rTemp, 0xF0
 			or rPart, rTemp
 			mov rHeadPos, rPart ; store new head position for collision
-			jmp new_pos_store
+			jmp apple_collision
 
 			; x-position changed
 			x_pos_change:
@@ -288,6 +288,17 @@ main:
 			swap rPart
 			or rPart, rTemp
 			mov rHeadPos, rPart ; store new head position for collision
+			jmp apple_collision
+
+			move_snake_loop_middle_jump_back:
+			jmp move_snake_loop
+
+			; test apple collision
+			apple_collision:
+			cpse rApple, rHeadPos
+			jmp new_pos_store
+			inc rLength
+			; TODO: spawn new apple
 			jmp new_pos_store
 
 			; move every other part that isn't the head
@@ -333,7 +344,34 @@ main:
 			st Z, rITemp4
 			; comtinue or conclude the loop
 			dec rIndex
-			brne move_snake_loop
+			brne move_snake_loop_middle_jump_back
+
+		; print apple position
+		mov rSnakeX, rApple
+		swap rSnakeX
+		andi rSnakeX, 0x07
+		mov rSnakeY, rApple
+		andi rSnakeY, 0x07
+		; copy index 0 of the matrix to Z from X to keep the
+		; reference to X clean for future operations
+		movw Z, X
+		add ZL, rSnakeY		; add the y position to the matrix index to select row
+		lds rITemp3, SREG
+		sbrc rITemp3, 3		; check if overflow flag is set to compensate for addition
+		inc ZH				; compensate so we're in the right memory space if overflow DID happen
+		ld rITemp4, Z
+		ldi rTemp, 0x80
+		; check if the snake part is in index 0
+		cpi rSnakeX, 1
+		brlo apple_update_position
+		apple_find_xpos:
+			lsr rTemp
+			dec rSnakeX
+			brne apple_find_xpos
+		apple_update_position:
+		or rITemp4, rTemp
+		st Z, rITemp4
+
 		; we've now dealth with the last overflow that happend and are ready for a new one
 		ldi rTemp, 0x00
 		mov rTick, rTemp
