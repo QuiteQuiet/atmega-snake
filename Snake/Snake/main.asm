@@ -6,22 +6,25 @@
 ;
 .DEF rITemp1	= r1
 .DEF rITemp2	= r2
-.DEF rTimerCount = r3
-.DEF rLength	= r4
-.DEF rOldSnakePos = r5
+.DEF rITemp3	= r3
+.DEF rITemp4	= r4
+.DEF rTimerCount = r5
+.DEF rLength	= r6
+.DEF rDirection	= r7
+.DEF rOldSnakePos = r8
+.DEF rIndex		= r9
+.DEF rPart		= r11
+
+.DEF rTick		= r14
 .DEF rTemp		= r16
 .DEF rArraySize = r17
-.DEF rSnakeX	= r17
-.DEF rSnakeY	= r18
 .DEF rRow		= r18
-.DEF rSnakePart	= r19
 .DEF rOutputB	= r19
 .DEF rOutputC	= r20
-.DEF rIndex		= r20
 .DEF rOutputD	= r21
 .DEF rRowSelect	= r22
-.DEF rPosition	= r23
-.DEF rDirection	= r24
+.DEF rSnakeX	= r23
+.DEF rSnakeY	= r24
 
 ; constants
 .EQU MAX_LENGTH    = 25
@@ -84,16 +87,13 @@ init:
 
 ; ADC interrupt subroutine
 adc_complete:
-	ldi ZL, low(dMatrix)
-	ldi ZH, high(dMatrix)
 	lds rITemp1, ADCH
 	lds rITemp2, ADMUX
 
 	ldi r25, 0x20
 	cp rITemp1, r25
 	brsh over_0x20
-	mov r25, rDirection
-	andi r25, 0xFC
+	ldi r25, 0
 	cbr r25, 1 ; RÄKNAR FRÅN ETT!!!?!?!?!?!?!?
 	mov r10, r25
 	rjmp get_axis
@@ -102,16 +102,17 @@ adc_complete:
 	ldi r25, 0xE0
 	cp rITemp1, r25
 	brlo move_end
-	mov r25, rDirection
-	andi r25, 0xFC
+	ldi r25, 0
 	sbr r25, 1
 	mov r10, r25
 
 	get_axis:
-	mov r25, rDirection
-	andi r25, 0xFC
+	ldi r25, 0
 	sbrs rITemp2, MUX0
 	sbr r25, 2
+	or r10, r25
+	mov r25, rDirection
+	andi r25, 0b11111100
 	or r10, r25
 	mov rDirection, r10
 
@@ -126,14 +127,13 @@ adc_complete:
 
 ; Timer0 interrupt subroutine
 t0_overflow:
-	ldi ZL, low(dMatrix)
-	ldi ZH, high(dMatrix)
 	inc rTimerCount
-	st Z, rTimerCount
-	breq t0_return
-	sbr rDirection, 5 ; mark that 255 timer0 overflows have happened by setting this bit
-	std Z+1, rDirection
-	t0_return:
+	breq t0_do_stuff
+	reti
+	t0_do_stuff:
+	; mark that 255 timer0 overflows have happened
+	ldi r25, 0xFF
+	mov rTick, r25
 	reti
 
 print:
@@ -185,15 +185,13 @@ print:
 		dec rArraySize
 
 		brne print_loop
-
 	ret
-
 
 main:
 	ldi XL, low(dSnake)
 	ldi XH, high(dSnake)
 	; start the snake in the center
-	ldi rTemp, 0x34
+	ldi rTemp, 0x35
 	st X, rTemp
 	ldi rTemp, 0x1
 	mov rLength, rTemp
@@ -225,92 +223,96 @@ main:
 	sts ADCSRA, rTemp ; start first ADC
 
 	loop:
+		
 		call print
-		sbrs rDirection, 4
+		sbrs rTick, 1
 		jmp loop
-	game_logic:
+
 		ldi XL, low(dMatrix)
 		ldi XH, high(dMatrix)
-		ldi rRow, 8
-		array_clear_loop:
-			ld rTemp, X
-			clr rTemp
-			st X+, rTemp
-			dec rRow
-			brne array_clear_loop
+		ldi r23, 8
+		matrix_clear_loop:
+			ld r24, X
+			clr r24
+			st X+, r24
+			dec r23
+			brne matrix_clear_loop
 		ldi XL, low(dMatrix)
 		ldi XH, high(dMatrix)
 		ldi YL, low(dSnake)
 		ldi YH, high(dSnake)
 		mov rIndex, rLength
 		move_snake_loop:
-			ld rSnakePart, Y
+			ld rPart, Y
 			; TODO: jump if not head
 
 			; move snake head position
-			mov rOldSnakePos, rSnakePart
+			mov rOldSnakePos, rPart
 			; swap if we want the x position, skip if we don't
 			sbrs rDirection, 1
-			swap rSnakePart
-
+			swap rPart
+	
 			; increment and decrement the head based on what the rDirection register say
-			andi rSnakePart, 0x7
+			ldi rTemp, 0x7
+			and rPart, rTemp
 			sbrc rDirection, 0
-			dec rSnakePart
+			dec rPart
 			sbrs rDirection, 0
-			inc rSnakePart
-			andi rSnakePart, 0x7
+			inc rPart
+			ldi rTemp, 0x7
+			and rPart, rTemp
 			; load coordinates for the snake again (if x position changed, we need the old y again)
-			ld rPosition, Y
+			ld rTemp, Y
 			sbrs rDirection, 1
 			rjmp x_pos_change
 
 			; y-position changed
-			andi rPosition, 0xF0
-			or rSnakePart, rPosition
+			andi rTemp, 0xF0
+			or rPart, rTemp
 			rjmp new_pos_store
 
 			; x-position changed
 			x_pos_change:
-			andi rPosition, 0x0F
-			swap rSnakePart
-			or rSnakePart, rPosition
+			andi rTemp, 0x0F
+			swap rPart
+			or rPart, rTemp
 			rjmp new_pos_store
 
 			; move every other part that isn't the head
 			; TODO
 
 			new_pos_store:
-			st Y+, rSnakePart
+			st Y+, rPart
 
 			; set matrix bit where this snake part is at
-			mov rSnakeX, rSnakePart
+			mov rSnakeX, rPart
 			swap rSnakeX
 			andi rSnakeX, 0x07
-			mov rSnakeY, rSnakePart
+			mov rSnakeY, rPart
 			andi rSnakeY, 0x07
 			; copy index 0 of the matrix to Z from X to keep the
 			; reference to X clean for future operations
 			movw Z, X
 			add ZL, rSnakeY		; add the y position to the matrix index to select row
-			lds rTemp, SREG
-			sbrc rTemp, 3 		; check if overflow flag is set to compensate for addition
-			inc ZH 				; compensate so we're in the right memory space if overflow DID happen
-			ld rPosition, Z
+			lds rITemp3, SREG
+			sbrc rITemp3, 3		; check if overflow flag is set to compensate for addition
+			inc ZH				; compensate so we're in the right memory space if overflow DID happen
+			ld rITemp4, Z
 			ldi rTemp, 0x80
 			; check if the snake part is in index 0
 			cpi rSnakeX, 1
 			brlo update_position
-			find_xpos:
+			part_find_xpos:
 				lsr rTemp
 				dec rSnakeX
-				brne find_xpos
-
+				brne part_find_xpos
 			update_position:
-			or rPosition, rTemp
-			st Z, rPosition
+			or rITemp4, rTemp
+			st Z, rITemp4
 			; comtinue or conclude the loop
 			dec rIndex
 			brne move_snake_loop
-		cbr rDirection, 4	; we've now dealth with the last overflow that happend and are ready for a new one
+		; we've now dealth with the last overflow that happend and are ready for a new one
+		ldi rTemp, 0x00
+		mov rTick, rTemp
 		jmp loop
