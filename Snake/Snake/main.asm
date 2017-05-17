@@ -6,18 +6,15 @@
 ;
 .DEF rITemp1	= r1
 .DEF rITemp2	= r2
-.DEF rITemp3	= r3
-.DEF rITemp4	= r4
-.DEF rTimerCount = r5
-.DEF rLength	= r6
-.DEF rDirection	= r7
-.DEF rOldSnakePos = r8
-.DEF rIndex		= r9
-.DEF rPart		= r11
-.DEF rHeadPos	= r12
-.DEF rApple		= r13
-.DEF rTick		= r14
-.DEF rRandom	= r15
+.DEF rTimerCount = r3
+.DEF rLength	= r4
+.DEF rDirection	= r5
+.DEF rOldSnakePos = r6
+.DEF rPart		= r7
+.DEF rHeadPos	= r8
+.DEF rApple		= r9
+.DEF rTick		= r10
+.DEF rRandom	= r11
 .DEF rTemp		= r16
 .DEF rArraySize = r17
 .DEF rRow		= r18
@@ -32,7 +29,7 @@
 .EQU MAX_LENGTH    = 25
 
 .DSEG
-; Datasegment för lysdiodarrayen
+; Matrix for LED-array
 dMatrix: .BYTE 8
 ; Snake array
 ; The snake array is stored as a byte per body piece where each index is the
@@ -56,7 +53,7 @@ dSnake: .BYTE MAX_LENGTH + 1
 .ORG INT_VECTORS_SIZE
 
 init:
-    // Sätt stackpekaren till högsta minnesadressen
+    // Set stackpointer to highest memoryaddress 
     ldi rTemp, HIGH(RAMEND)
     out SPH, rTemp
     ldi rTemp, LOW(RAMEND)
@@ -105,8 +102,8 @@ adc_complete:
 	cp rITemp1, r25
 	brsh over_0x20
 	ldi r25, 0
-	cbr r25, 1 ; RÄKNAR FRÅN ETT!!!?!?!?!?!?!?
-	mov r10, r25
+	cbr r25, 1
+	mov r15, r25
 	rjmp get_axis
 
 	over_0x20:
@@ -115,17 +112,17 @@ adc_complete:
 	brlo move_end
 	ldi r25, 0
 	sbr r25, 1
-	mov r10, r25
+	mov r15, r25
 
 	get_axis:
 	ldi r25, 0
 	sbrs rITemp2, MUX0
 	sbr r25, 2
-	or r10, r25
+	or r15, r25
 	mov r25, rDirection
 	andi r25, 0b11111100
-	or r10, r25
-	mov rDirection, r10
+	or r15, r25
+	mov rDirection, r15
 
 	move_end:
 	ldi r25, 0x01
@@ -218,6 +215,7 @@ main:
 
 	ldi rTemp, 0x00
 	st	Z+, rTemp
+	; Set TimerCount and Direction registers to start values
 	mov rTimerCount, rTemp
 	mov rDirection, rTemp
 	ldi rTemp, 0x00
@@ -246,23 +244,24 @@ main:
 
 		ldi XL, low(dMatrix)
 		ldi XH, high(dMatrix)
-		ldi r23, 8
+		ldi rArraySize, 8
+		; Clearing array
 		matrix_clear_loop:
-			ld r24, X
-			clr r24
-			st X+, r24
-			dec r23
+			ld rTemp, X
+			clr rTemp
+			st X+, rTemp
+			dec rArraySize
 			brne matrix_clear_loop
 		ldi XL, low(dMatrix)
 		ldi XH, high(dMatrix)
 		ldi YL, low(dSnake)
 		ldi YH, high(dSnake)
-		mov rIndex, rLength
+		mov rArraySize, rLength
 		move_snake_loop:
 			ld rPart, Y
 
 			; jump if not head
-			cpse rIndex, rLength
+			cpse rArraySize, rLength
 			jmp move_snake_part
 
 			; move snake head position
@@ -342,10 +341,10 @@ main:
 			; reference to X clean for future operations
 			movw Z, X
 			add ZL, rSnakeY		; add the y position to the matrix index to select row
-			lds rITemp3, SREG
-			sbrc rITemp3, 3		; check if overflow flag is set to compensate for addition
+			lds rTemp, SREG
+			sbrc rTemp, 3		; check if overflow flag is set to compensate for addition
 			inc ZH				; compensate so we're in the right memory space if overflow DID happen
-			ld rITemp4, Z
+			ld rRow, Z
 			ldi rTemp, 0x80
 			; check if the snake part is in index 0
 			cpi rSnakeX, 1
@@ -355,10 +354,10 @@ main:
 				dec rSnakeX
 				brne part_find_xpos
 			update_position:
-			or rITemp4, rTemp
-			st Z, rITemp4
+			or rRow, rTemp
+			st Z, rRow
 			; comtinue or conclude the loop
-			dec rIndex
+			dec rArraySize
 			brne move_snake_loop_middle_jump_back
 
 		; print apple position
@@ -371,10 +370,10 @@ main:
 		; reference to X clean for future operations
 		movw Z, X
 		add ZL, rSnakeY		; add the y position to the matrix index to select row
-		lds rITemp3, SREG
-		sbrc rITemp3, 3		; check if overflow flag is set to compensate for addition
+		lds rTemp, SREG
+		sbrc rTemp, 3		; check if overflow flag is set to compensate for addition
 		inc ZH				; compensate so we're in the right memory space if overflow DID happen
-		ld rITemp4, Z
+		ld rRow, Z
 		ldi rTemp, 0x80
 		; check if the snake part is in index 0
 		cpi rSnakeX, 1
@@ -384,8 +383,8 @@ main:
 			dec rSnakeX
 			brne apple_find_xpos
 		apple_update_position:
-		or rITemp4, rTemp
-		st Z, rITemp4
+		or rRow, rTemp
+		st Z, rRow
 
 		; we've now dealth with the last overflow that happend and are ready for a new one
 		ldi rTemp, 0x00
